@@ -3,7 +3,7 @@
 This is sample code for the accompanying AWS Security Blog post Continuous compliance monitoring with Chef InSpec and AWS Security Hub. Python 3.7 code for the Lambda function and a YAML CloudFormation script are provided.
 
 #### Solutions Architecture
-![Architecture](https://github.com/aws-samples/securityhub-ssm-inspec-integration/Architecture.jpg)
+![Architecture](https://github.com/aws-samples/securityhub-ssm-inspec-integration/blob/master/Architecture.jpg)
 1.	Invoke AWS-RunInSpecChecks document on-demand by using Run Command against your target instances (State Manager is another option for scheduling InSpec scans, but is not covered in this blog post).
 2.	Systems Manager downloads the InSpec Ruby files from Amazon Simple Storage Service (Amazon S3), installs InSpec on your server, runs the scan, and removes InSpec when complete.
 3.	AWS Systems Manager pushes scan results to the Compliance API and presents the information in the Systems Manager Compliance console, to include severity and compliance state.
