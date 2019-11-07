@@ -22,7 +22,7 @@ Resources:
     Properties:
       FunctionName: SSMComplianceInSpec_to_SecurityHub
       Description: Pushes enriched information about instances that fail InSpec checks from SSM Compliance to Security Hub
-      Handler: lambda_function.lambda_handler
+      Handler: index.lambda_handler
       MemorySize: 384
       Role: !GetAtt SSMtoSecHubLambdaRole.Arn
       Runtime: python3.7
@@ -31,7 +31,7 @@ Resources:
         ZipFile: |
           import json
           def lambda_handler(event, context):
-              print("Hello World")
+              print("REPLACE ME WITH THE GITHUB CODE")
   SSMtoSecHubLambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -56,7 +56,8 @@ Resources:
             - ssm:ListComplianceItems
             - ssm:DescribeInstanceInformation
             - securityhub:BatchImportFindings
-            - ec2:*
+            - ec2:DescribeNetworkAcls
+            - ec2:DescribeInstances
             Resource: '*'
       AssumeRolePolicyDocument:
         Version: 2012-10-17
