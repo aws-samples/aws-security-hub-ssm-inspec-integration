@@ -24,7 +24,6 @@ def lambda_handler(event, context):
     noncompliantInstance = str(event['detail']['resource-id'])
     cweEventType = str(event['detail-type'])
     ssmManagedResourceArn = str(event['resources'][0])
-    cweSource = str(event['source'])
     accountId = str(event['account'])
     awsRegion = str(event['region'])
     
@@ -42,70 +41,6 @@ def lambda_handler(event, context):
     ec2client = boto3.client('ec2')
     ec2 = boto3.resource('ec2')
     securityhub = boto3.client('securityhub')
-    
-    # call SSM ListComplianceItems API, filter on non-compliant InSpec scans
-    try:
-        response = ssm.list_compliance_items(
-        Filters=[
-            {
-                'Key': 'ComplianceType',
-                'Values': [ 'Custom:InSpec' ],
-                'Type': 'EQUAL'
-            },
-            {
-                'Key': 'Status',
-                'Values': [ 'NON_COMPLIANT' ],
-                'Type': 'EQUAL'
-            }
-        ],
-        ResourceTypes=[ 'ManagedInstance' ],
-        ResourceIds=[ noncompliantInstance ],
-        MaxResults=1
-        )
-        print(response)
-    except Exception as e:
-        print(e)
-        raise
-
-    # pull out needed information from SSM ComplianceItems API to map to ASFF
-    ssmComplianceType = str(response['ComplianceItems'][0]['ComplianceType'])
-    inspecControlId = str(response['ComplianceItems'][0]['Id'])
-    inspecControlTitle = str(response['ComplianceItems'][0]['Title'])
-    ssmComplianceSeverity = str(response['ComplianceItems'][0]['Severity'])
-    ssmExecutionId = str(response['ComplianceItems'][0]['ExecutionSummary']['ExecutionId'])
-    ssmExecutionType = str(response['ComplianceItems'][0]['ExecutionSummary']['ExecutionType'])
-
-    # map ASFF Severity based on SSM Compliance Severty
-    # SSM = 'Severity': 'CRITICAL'|'HIGH'|'MEDIUM'|'LOW'|'INFORMATIONAL'|'UNSPECIFIED'
-    # SecHub = Allowed values are the following: PASSED, WARNING, FAILED, NOT_AVAILABLE
-    if ssmComplianceSeverity == 'UNSPECIFIED':
-        ssmASFFComplianceStatus = 'NOT_AVAILABLE'
-        ssmASFFProductSeverity = int(1)
-        ssmASFFProductNormalized = int(1)
-    elif ssmComplianceSeverity == 'INFORMATIONAL':
-        ssmASFFComplianceStatus = 'WARNING'
-        ssmASFFProductSeverity = int(1)
-        ssmASFFProductNormalized = int(1)
-    elif ssmComplianceSeverity == 'LOW':
-        ssmASFFComplianceStatus = 'FAILED'
-        ssmASFFProductSeverity = int(1)
-        ssmASFFProductNormalized = int(11)
-    elif ssmComplianceSeverity == 'MEDIUM':
-        ssmASFFComplianceStatus = 'FAILED'
-        ssmASFFProductSeverity = int(4)
-        ssmASFFProductNormalized = int(41)
-    elif ssmComplianceSeverity == 'HIGH':
-        ssmASFFComplianceStatus = 'FAILED'
-        ssmASFFProductSeverity = int(7)
-        ssmASFFProductNormalized = int(71)
-    elif ssmComplianceSeverity == 'CRITICAL':
-        ssmASFFComplianceStatus = 'FAILED'
-        ssmASFFProductSeverity = int(9)
-        ssmASFFProductNormalized = int(91)
-    else:
-        print("No Compliance Info Found!")
-    
-    print("Security Hub Severity identified as:" + " " + ssmComplianceSeverity)
     
     # use Ec2 Resource to pull out ASFF Ec2InstnaceInfo for mapping
     try:
@@ -162,80 +97,142 @@ def lambda_handler(event, context):
         print("SSM data enrichment complete")
     except Exception as e:
         print(e)
-    
-    # ISO Time
-    iso8061Time = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()
-    # ASFF BIF Id
-    asffID = str(uuid.uuid4())
 
-    # map SSM, EC2 and CloudWatch Information into ASFF and send to Security Hub
+    # call SSM ListComplianceItems API, filter on non-compliant InSpec scans
     try:
-        response = securityhub.batch_import_findings(
-        Findings=[
+        response = ssm.list_compliance_items(
+        Filters=[
             {
-                'SchemaVersion': '2018-10-08',
-                'Id': asffID,
-                'ProductArn': 'arn:aws:securityhub:' + awsRegion + ':' + accountId + ':product/' + accountId + '/default',
-                'GeneratorId': ssmExecutionId,
-                'AwsAccountId': accountId,
-                'Types': [ 'Software and Configuration Checks' ],
-                'FirstObservedAt': iso8061Time,
-                'UpdatedAt': iso8061Time,
-                'CreatedAt': iso8061Time,
-                'Severity': {
-                    'Product': ssmASFFProductSeverity,
-                    'Normalized': ssmASFFProductNormalized
-                },
-                'Confidence': 99,
-                'Title': 'EC2 Instance' + ' ' + noncompliantInstance + ' ' + 'has failed SSM Compliance Type' + ' ' + ssmComplianceType + ' ' + 'check for:' + ' ' + inspecControlTitle,
-                'Description': 'EC2 Instance' + ' ' + noncompliantInstance + ' ' + 'has failed SSM Compliance Type' + ' ' + ssmComplianceType + ' ' + 'check for:' + ' ' + inspecControlTitle + ' ' + 'ID is:' + ' ' + inspecControlId,
-                'ProductFields': {
-                    'ProviderName': 'AWS Systems Manager Compliance'
-                },
-                'UserDefinedFields': {
-                    'CloudWatch Detail Type': cweEventType,
-                    'CloudWatch Source Detail': cweSource,
-                    'InSpec Gemfile Title': inspecControlId,
-                    'SSM Execution Type': ssmExecutionType,
-                    'SSM Managed Instance ARN': ssmManagedResourceArn
-                },
-                'Resources': [
-                    {
-                        'Type': 'AwsEc2Instance',
-                        'Id': 'arn:aws:ec2:' + awsRegion + ':' + accountId + ':' + 'instance/' + noncompliantInstance,
-                        'Partition': 'aws',
-                        'Region': awsRegion,
-                        'Details': {
-                            'AwsEc2Instance': {
-                                'Type': ec2Type,
-                                'ImageId': ec2ImageId,
-                                'IpV4Addresses': [ ec2PrivIPv4, ec2PubIPv4 ],
-                                'KeyName': ec2KeyName,
-                                'IamInstanceProfileArn': ec2InstanceProfile['Arn'],
-                                'VpcId': ec2VpcInfo,
-                                'SubnetId': ec2SubnetInfo
-                            },
-                            "Other": { 
-                                "instanceID-nonArn" : noncompliantInstance,
-                                "networkACLId" : ec2NaclInfo,
-                                "securityGroupName" : securitygroupName,
-                                "securityGroupId" : securitygroupId,
-                                "ssmAgentVersion" : ssmAgentVersion,
-                                "ssmPlatformType" : ssmPlatformType,
-                                "ssmPlatformName" : ssmPlatformName,
-                                "ssmPlatformVersion" : ssmPlatformVersion
-                            }
-                        }
-                    },
-                ],
-                'Compliance': {'Status': ssmASFFComplianceStatus},
-                'VerificationState': 'TRUE_POSITIVE',
-                'WorkflowState': 'NEW',
-                'RecordState': 'ACTIVE'
+                'Key': 'ComplianceType',
+                'Values': [ 'Custom:InSpec' ],
+                'Type': 'EQUAL'
+            },
+            {
+                'Key': 'Status',
+                'Values': [ 'NON_COMPLIANT' ],
+                'Type': 'EQUAL'
             }
-        ]
+        ],
+        ResourceTypes=[ 'ManagedInstance' ],
+        ResourceIds=[ noncompliantInstance ],
+        MaxResults=50
         )
-        print(response)
     except Exception as e:
         print(e)
         raise
+
+    # pull out & loop through needed information from SSM ComplianceItems API to map to ASFF
+
+    for item in response['ComplianceItems']:
+        inspecControlId = str(item['Id'])
+        inspecControlTitle = str(item['Title'])
+        ssmComplianceSeverity = str(item['Severity'])
+        ssmExecutionId = str(item['ExecutionSummary']['ExecutionId'])
+        ssmExecutionType = str(item['ExecutionSummary']['ExecutionType'])
+
+        # map ASFF Severity based on SSM Compliance Severty
+        # SSM = 'Severity': 'CRITICAL'|'HIGH'|'MEDIUM'|'LOW'|'INFORMATIONAL'|'UNSPECIFIED'
+        # SecHub = Allowed values are the following: PASSED, WARNING, FAILED, NOT_AVAILABLE
+        if ssmComplianceSeverity == 'UNSPECIFIED':
+            ssmASFFComplianceStatus = 'NOT_AVAILABLE'
+            ssmASFFProductSeverity = int(1)
+            ssmASFFProductNormalized = int(1)
+        elif ssmComplianceSeverity == 'INFORMATIONAL':
+            ssmASFFComplianceStatus = 'WARNING'
+            ssmASFFProductSeverity = int(1)
+            ssmASFFProductNormalized = int(1)
+        elif ssmComplianceSeverity == 'LOW':
+            ssmASFFComplianceStatus = 'FAILED'
+            ssmASFFProductSeverity = int(1)
+            ssmASFFProductNormalized = int(11)
+        elif ssmComplianceSeverity == 'MEDIUM':
+            ssmASFFComplianceStatus = 'FAILED'
+            ssmASFFProductSeverity = int(4)
+            ssmASFFProductNormalized = int(41)
+        elif ssmComplianceSeverity == 'HIGH':
+            ssmASFFComplianceStatus = 'FAILED'
+            ssmASFFProductSeverity = int(7)
+            ssmASFFProductNormalized = int(71)
+        elif ssmComplianceSeverity == 'CRITICAL':
+            ssmASFFComplianceStatus = 'FAILED'
+            ssmASFFProductSeverity = int(9)
+            ssmASFFProductNormalized = int(91)
+        else:
+            print("No Compliance Info Found!")
+        
+        print("Security Hub Severity identified as:" + " " + ssmComplianceSeverity)
+        
+        # map SSM, EC2 and CloudWatch Information into ASFF and send to Security Hub
+        # ISO Time
+        iso8061Time = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()
+        # ASFF BIF Id
+        asffID = str(uuid.uuid4())
+        try:
+            response = securityhub.batch_import_findings(
+            Findings=[
+                {
+                    'SchemaVersion': '2018-10-08',
+                    'Id': asffID,
+                    'ProductArn': 'arn:aws:securityhub:' + awsRegion + ':' + accountId + ':product/' + accountId + '/default',
+                    'GeneratorId': ssmExecutionId,
+                    'AwsAccountId': accountId,
+                    'Types': [ 'Software and Configuration Checks' ],
+                    'FirstObservedAt': iso8061Time,
+                    'UpdatedAt': iso8061Time,
+                    'CreatedAt': iso8061Time,
+                    'Severity': {
+                        'Product': ssmASFFProductSeverity,
+                        'Normalized': ssmASFFProductNormalized
+                    },
+                    'Confidence': 99,
+                    'Title': 'EC2 Instance' + ' ' + noncompliantInstance + ' has failed InSpec Check ID: ' + inspecControlId,
+                    'Description': 'EC2 Instance ' + noncompliantInstance + ' has failed InSpec Check ID: ' + inspecControlId + ' Check Title: ' + inspecControlTitle,
+                    'ProductFields': {
+                        'Provider Name': 'AWS Systems Manager Compliance'
+                    },
+                    'UserDefinedFields': {
+                        'CloudWatch Detail Type': cweEventType
+                    },
+                    'Resources': [
+                        {
+                            'Type': 'AwsEc2Instance',
+                            'Id': 'arn:aws:ec2:' + awsRegion + ':' + accountId + ':' + 'instance/' + noncompliantInstance,
+                            'Partition': 'aws',
+                            'Region': awsRegion,
+                            'Details': {
+                                'AwsEc2Instance': {
+                                    'Type': ec2Type,
+                                    'ImageId': ec2ImageId,
+                                    'IpV4Addresses': [ ec2PrivIPv4, ec2PubIPv4 ],
+                                    'KeyName': ec2KeyName,
+                                    'IamInstanceProfileArn': ec2InstanceProfile['Arn'],
+                                    'VpcId': ec2VpcInfo,
+                                    'SubnetId': ec2SubnetInfo
+                                },
+                                "Other": { 
+                                    "Instance ID" : noncompliantInstance,
+                                    "Network ACL ID" : ec2NaclInfo,
+                                    "Security Group Name" : securitygroupName,
+                                    "Security Group Id" : securitygroupId,
+                                    "SSM Agent Version" : ssmAgentVersion,
+                                    "SSM Platform Type" : ssmPlatformType,
+                                    "SSM Platform Name" : ssmPlatformName,
+                                    "SSM Platform Version" : ssmPlatformVersion,
+                                    'InSpec Gemfile Title': inspecControlId,
+                                    'SSM Execution Type': ssmExecutionType,
+                                    'SSM Managed Instance ARN': ssmManagedResourceArn
+                                }
+                            }
+                        },
+                    ],
+                    'Compliance': {'Status': ssmASFFComplianceStatus},
+                    'VerificationState': 'TRUE_POSITIVE',
+                    'WorkflowState': 'NEW',
+                    'RecordState': 'ACTIVE'
+                }
+            ]
+            )
+            print(response)
+        except Exception as e:
+            print(e)
+            raise
