@@ -185,8 +185,8 @@ def lambda_handler(event, context):
                         'Normalized': ssmASFFProductNormalized
                     },
                     'Confidence': 99,
-                    'Title': 'EC2 Instance' + ' ' + noncompliantInstance + ' has failed InSpec Check ID: ' + inspecControlId,
-                    'Description': 'EC2 Instance ' + noncompliantInstance + ' has failed InSpec Check ID: ' + inspecControlId + ' Check Title: ' + inspecControlTitle,
+                    'Title': 'EC2 Instance' + ' ' + noncompliantInstance + ' has failed InSpec Check ' + inspecControlId,
+                    'Description': 'EC2 Instance ' + noncompliantInstance + ' has failed InSpec Check ' + inspecControlId + ' Check Title: ' + inspecControlTitle,
                     'ProductFields': {
                         'Provider Name': 'AWS Systems Manager Compliance'
                     },

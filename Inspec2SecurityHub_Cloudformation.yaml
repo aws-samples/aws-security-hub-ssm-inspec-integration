@@ -52,7 +52,6 @@ Resources:
             Resource: '*'
           - Effect: Allow
             Action:
-            - iam:PassRole
             - ssm:ListComplianceItems
             - ssm:DescribeInstanceInformation
             - securityhub:BatchImportFindings
