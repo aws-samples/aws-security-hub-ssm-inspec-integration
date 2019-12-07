@@ -17,7 +17,6 @@
 import json
 import boto3
 import datetime
-import uuid
 
 def lambda_handler(event, context):
     # parse needed information from CloudWatch Event
@@ -166,13 +165,12 @@ def lambda_handler(event, context):
         # ISO Time
         iso8061Time = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()
         # ASFF BIF Id
-        asffID = str(uuid.uuid4())
         try:
             response = securityhub.batch_import_findings(
             Findings=[
                 {
                     'SchemaVersion': '2018-10-08',
-                    'Id': asffID,
+                    'Id': noncompliantInstance + '/' + inspecControlId,
                     'ProductArn': 'arn:aws:securityhub:' + awsRegion + ':' + accountId + ':product/' + accountId + '/default',
                     'GeneratorId': ssmExecutionId,
                     'AwsAccountId': accountId,
@@ -218,7 +216,7 @@ def lambda_handler(event, context):
                                     "SSM Platform Type" : ssmPlatformType,
                                     "SSM Platform Name" : ssmPlatformName,
                                     "SSM Platform Version" : ssmPlatformVersion,
-                                    'InSpec Gemfile Title': inspecControlId,
+                                    'InSpec Profile Title': inspecControlId,
                                     'SSM Execution Type': ssmExecutionType,
                                     'SSM Managed Instance ARN': ssmManagedResourceArn
                                 }
